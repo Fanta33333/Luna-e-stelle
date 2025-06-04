@@ -20,10 +20,11 @@ app = FastAPI()
 # ✅ CORS GitHub Pages
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://fanta33333.github.io",
-        "https://fanta33333.github.io/Luna-e-stelle"
-    ],
+   origins = [
+    "https://fanta33333.github.io",
+    "https://fanta33333.github.io/Luna-e-stelle/",
+    "https://fanta33333.github.io/Luna-e-stelle"
+]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
