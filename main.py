@@ -1,31 +1,29 @@
 from time import sleep
-import os
-import asyncio
-from dotenv import load_dotenv
 from packaging import version
 import openai
 from openai import OpenAI
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import asyncio
+import os
 
-# ✅ Carica variabili da .env o Render Environment
-load_dotenv()
+# ✅ Prendi le variabili d’ambiente
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
-# ✅ Controllo versione OpenAI
+# ✅ Controlla versione SDK OpenAI
 required_version = version.parse("1.1.1")
 current_version = version.parse(openai.__version__)
 if current_version < required_version:
-    raise ValueError(f"Errore: la versione di OpenAI è {openai.__version__}, inferiore alla richiesta 1.1.1")
+    raise ValueError(f"La versione di OpenAI SDK ({openai.__version__}) è inferiore a quella richiesta (1.1.1)")
 else:
     print("✅ Versione OpenAI compatibile.")
 
 # ✅ Inizializza FastAPI
 app = FastAPI()
 
-# ✅ Abilita CORS per consentire le richieste da GitHub Pages
+# ✅ Abilita CORS per accesso da GitHub Pages
 origins = [
     "https://fanta33333.github.io",
     "https://fanta33333.github.io/Luna-e-stelle"
@@ -38,15 +36,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Inizializza client OpenAI
+# ✅ Inizializza OpenAI Client
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Modello richiesta utente
+# ✅ Modello per la richiesta POST
 class ChatRequest(BaseModel):
     thread_id: str
     message: str
 
-# ✅ Endpoint per iniziare nuova conversazione
+# ✅ Endpoint per iniziare una nuova conversazione
 @app.get("/start")
 async def start_conversation():
     try:
@@ -55,42 +53,49 @@ async def start_conversation():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ✅ Endpoint per inviare messaggio e ottenere risposta
+# ✅ Endpoint per inviare un messaggio
 @app.post("/chat")
 async def chat_request(chat_request: ChatRequest):
+    thread_id = chat_request.thread_id
+    user_input = chat_request.message
+
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="thread_id mancante")
+
     try:
-        # Invia messaggio dell'utente
+        # Invia messaggio utente
         client.beta.threads.messages.create(
-            thread_id=chat_request.thread_id,
+            thread_id=thread_id,
             role="user",
-            content=chat_request.message
+            content=user_input
         )
 
-        # Esegui assistant
+        # Avvia il run
         run = client.beta.threads.runs.create(
-            thread_id=chat_request.thread_id,
+            thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
 
-        # Attendi completamento
+        # Attendi il completamento
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=chat_request.thread_id,
+                thread_id=thread_id,
                 run_id=run.id
             )
-            if run_status.status == "completed":
+            if run_status.status in ["completed", "cancelled", "expired", "requires_action"]:
                 break
-            elif run_status.status in ["failed", "cancelled", "expired"]:
-                raise HTTPException(status_code=500, detail="Errore: run fallita o terminata.")
+            elif run_status.status == "failed":
+                raise HTTPException(status_code=500, detail="Run fallito")
             await asyncio.sleep(1)
 
-        # Estrai risposta
-        messages = client.beta.threads.messages.list(thread_id=chat_request.thread_id)
+        # Recupera la risposta
+        messages = client.beta.threads.messages.list(thread_id=thread_id)
         response = messages.data[0].content[0].text.value
         return {"response": response}
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 
