@@ -1,30 +1,35 @@
 from time import sleep
+import os
+import asyncio
+from dotenv import load_dotenv
 from packaging import version
 import openai
 from openai import OpenAI
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import asyncio
-import os
+
+# ✅ Carica variabili da .env o Render Environment
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 
 # ✅ Controllo versione OpenAI
 required_version = version.parse("1.1.1")
 current_version = version.parse(openai.__version__)
 if current_version < required_version:
-    raise ValueError(f"Error: OpenAI version {openai.__version__} is less than required 1.1.1")
+    raise ValueError(f"Errore: la versione di OpenAI è {openai.__version__}, inferiore alla richiesta 1.1.1")
 else:
-    print("OpenAI version is compatible.")
+    print("✅ Versione OpenAI compatibile.")
 
 # ✅ Inizializza FastAPI
 app = FastAPI()
 
-# ✅ Abilita CORS
+# ✅ Abilita CORS per consentire le richieste da GitHub Pages
 origins = [
     "https://fanta33333.github.io",
     "https://fanta33333.github.io/Luna-e-stelle"
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -33,18 +38,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Leggi API Key e Assistant ID dalle variabili di ambiente
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
-
+# ✅ Inizializza client OpenAI
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Modello richiesta
+# ✅ Modello richiesta utente
 class ChatRequest(BaseModel):
     thread_id: str
     message: str
 
-# ✅ Endpoint per iniziare conversazione
+# ✅ Endpoint per iniziare nuova conversazione
 @app.get("/start")
 async def start_conversation():
     try:
@@ -53,47 +55,40 @@ async def start_conversation():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ✅ Endpoint per mandare messaggi
+# ✅ Endpoint per inviare messaggio e ottenere risposta
 @app.post("/chat")
 async def chat_request(chat_request: ChatRequest):
-    thread_id = chat_request.thread_id
-    user_input = chat_request.message
-
-    if not thread_id:
-        raise HTTPException(status_code=400, detail="Missing thread_id")
-
     try:
-        # Invia messaggio utente
+        # Invia messaggio dell'utente
         client.beta.threads.messages.create(
-            thread_id=thread_id,
+            thread_id=chat_request.thread_id,
             role="user",
-            content=user_input
+            content=chat_request.message
         )
 
-        # Avvia assistente
+        # Esegui assistant
         run = client.beta.threads.runs.create(
-            thread_id=thread_id,
+            thread_id=chat_request.thread_id,
             assistant_id=ASSISTANT_ID
         )
 
         # Attendi completamento
         while True:
             run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
+                thread_id=chat_request.thread_id,
                 run_id=run.id
             )
-            if run_status.status in ["completed", "cancelled", "expired", "requires_action"]:
+            if run_status.status == "completed":
                 break
-            elif run_status.status == "failed":
-                raise HTTPException(status_code=500, detail="Run failed")
-            else:
-                await asyncio.sleep(1)
+            elif run_status.status in ["failed", "cancelled", "expired"]:
+                raise HTTPException(status_code=500, detail="Errore: run fallita o terminata.")
+            await asyncio.sleep(1)
 
-        # Recupera messaggio risposta
-        messages = client.beta.threads.messages.list(thread_id=thread_id)
+        # Estrai risposta
+        messages = client.beta.threads.messages.list(thread_id=chat_request.thread_id)
         response = messages.data[0].content[0].text.value
         return {"response": response}
-
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
