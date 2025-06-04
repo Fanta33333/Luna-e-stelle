@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Luna e Stelle - Assistente Virtuale</title>
+</head>
+<body>
+  <h1>🌙 Luna e Stelle - Assistente Virtuale</h1>
+  <button onclick="startThread()">Crea nuova conversazione</button>
+  <br><br>
+  <label for="message">Scrivi un messaggio:</label>
+  <input type="text" id="message" placeholder="Es. sono leone">
+  <button onclick="sendMessage()">Invia</button>
+  <p><strong>Risposta:</strong></p>
+  <div id="response"></div>
+
+  <script>
+    let threadId = "";
+
+    async function startThread() {
+      try {
+        const res = await fetch("https://luna-e-stelle.onrender.com/start");
+        const data = await res.json();
+        threadId = data.thread_id;
+        alert("Nuova conversazione iniziata!");
+      } catch (error) {
+        alert("Errore creando thread: " + error.message);
+      }
+    }
+
+    async function sendMessage() {
+      const userMessage = document.getElementById("message").value;
+      if (!threadId) {
+        alert("Prima clicca su 'Crea nuova conversazione'");
+        return;
+      }
+
+      try {
+        const res = await fetch("https://luna-e-stelle.onrender.com/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            thread_id: threadId,
+            message: userMessage
+          })
+        });
+
+        const data = await res.json();
+        document.getElementById("response").innerText = data.response;
+      } catch (error) {
+        alert("Errore inviando il messaggio: " + error.message);
+      }
+    }
+  </script>
+</body>
+</html>
